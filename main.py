@@ -52,8 +52,8 @@ class App(ctk.CTk):
 
     def mostrar_casa_padres(self):
         self._limpiar_main()
-        ctk.CTkLabel(self.main_area, text="🏠 Casa Padres — en construcción",
-                     font=ctk.CTkFont(size=16)).pack(expand=True)
+        from views.casa_padres import CasaPadresView
+        CasaPadresView(self.main_area)
 
     def mostrar_depa(self):
         self._limpiar_main()
