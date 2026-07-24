@@ -9,7 +9,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Finanzas Hogar")
-        self.geometry("1100x650")
+        self.geometry("1200x700")
         self._build_layout()
 
     def _build_layout(self):

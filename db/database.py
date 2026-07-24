@@ -19,7 +19,9 @@ def init_db():
             nombre TEXT NOT NULL,
             identificador TEXT,
             monto_estimado INTEGER DEFAULT 0,
-            responsable TEXT DEFAULT 'compartido'
+            responsable TEXT DEFAULT 'compartido',
+            url_pago TEXT,
+            dia_vencimiento INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS pagos (
