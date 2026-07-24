@@ -23,8 +23,22 @@ class CasaPadresView(ctk.CTkFrame):
             widget.destroy()
         self._cargar_cuentas()
 
+    def _calcular_estimado(self, conn, cuenta_id, monto_base):
+        pagos = conn.execute(
+            "SELECT monto_real FROM pagos WHERE cuenta_id = ? ORDER BY fecha DESC LIMIT 3",
+            (cuenta_id,)
+        ).fetchall()
+
+        if len(pagos) == 0:
+            return monto_base
+        elif len(pagos) < 3:
+            return pagos[0]["monto_real"]
+        else:
+            promedio = sum(p["monto_real"] for p in pagos) // len(pagos)
+            return promedio
+
     def _cargar_cuentas(self):
-        headers = ["Cuenta", "Identificador", "Último Pago", "Fecha Pago", "Próx. Vencimiento", "Link", "Acciones"]
+        headers = ["Cuenta", "Identificador", "Último Pago", "Fecha Pago", "Próx. Estimado", "Próx. Vencimiento", "Link", "Acciones"]
         for col, h in enumerate(headers):
             ctk.CTkLabel(self.tabla, text=h,
                          font=ctk.CTkFont(weight="bold")).grid(
@@ -43,14 +57,17 @@ class CasaPadresView(ctk.CTkFrame):
                 (cuenta["id"],)
             ).fetchone()
 
+            # Nombre
             ctk.CTkLabel(self.tabla, text=cuenta["nombre"]).grid(
                 row=row, column=0, padx=12, pady=6, sticky="w")
 
+            # Identificador copiable
             entry_id = ctk.CTkEntry(self.tabla, width=120)
             entry_id.insert(0, cuenta["identificador"])
             entry_id.configure(state="readonly")
             entry_id.grid(row=row, column=1, padx=12, pady=6, sticky="w")
 
+            # Último pago y fecha
             if ultimo:
                 monto_txt = f"${ultimo['monto_real']:,}"
                 partes = ultimo["fecha"].split("-")
@@ -64,6 +81,13 @@ class CasaPadresView(ctk.CTkFrame):
             ctk.CTkLabel(self.tabla, text=fecha_txt).grid(
                 row=row, column=3, padx=12, pady=6, sticky="w")
 
+            # Próximo estimado
+            estimado = self._calcular_estimado(conn, cuenta["id"], cuenta["monto_estimado"])
+            estimado_txt = f"${estimado:,}" if estimado else "—"
+            ctk.CTkLabel(self.tabla, text=estimado_txt, text_color="#4cc9f0").grid(
+                row=row, column=4, padx=12, pady=6, sticky="w")
+
+            # Próximo vencimiento
             dia = cuenta["dia_vencimiento"]
             if dia:
                 try:
@@ -82,25 +106,27 @@ class CasaPadresView(ctk.CTkFrame):
                         color = "#ffffff"
                     venc_txt = f"{venc.strftime('%d/%m/%Y')} ({dias_restantes}d)"
                     ctk.CTkLabel(self.tabla, text=venc_txt, text_color=color).grid(
-                        row=row, column=4, padx=12, pady=6, sticky="w")
+                        row=row, column=5, padx=12, pady=6, sticky="w")
                 except:
                     ctk.CTkLabel(self.tabla, text="—").grid(
-                        row=row, column=4, padx=12, pady=6, sticky="w")
+                        row=row, column=5, padx=12, pady=6, sticky="w")
             else:
                 ctk.CTkLabel(self.tabla, text="—").grid(
-                    row=row, column=4, padx=12, pady=6, sticky="w")
+                    row=row, column=5, padx=12, pady=6, sticky="w")
 
+            # Link
             if cuenta["url_pago"]:
                 ctk.CTkButton(self.tabla, text="🌐", width=35,
                               command=lambda u=cuenta["url_pago"]: webbrowser.open(u)).grid(
-                    row=row, column=5, padx=5, pady=6)
+                    row=row, column=6, padx=5, pady=6)
 
+            # Acciones
             frame_acc = ctk.CTkFrame(self.tabla, fg_color="transparent")
-            frame_acc.grid(row=row, column=6, padx=12, pady=6)
+            frame_acc.grid(row=row, column=7, padx=12, pady=6)
 
-            ctk.CTkButton(frame_acc, text="Registrar Pago", width=120,
+            ctk.CTkButton(frame_acc, text="💰 Pagar", width=90,
                           command=lambda c=cuenta: self._registrar_pago(c)).pack(side="left", padx=4)
-            ctk.CTkButton(frame_acc, text="📋 Historial", width=110, fg_color="#2d6a4f",
+            ctk.CTkButton(frame_acc, text="📋 Historial", width=100, fg_color="#2d6a4f",
                           command=lambda c=cuenta: self._ver_historial(c)).pack(side="left", padx=4)
 
         conn.close()
@@ -129,13 +155,15 @@ class CasaPadresView(ctk.CTkFrame):
         conn.close()
 
         if not pagos:
-            ctk.CTkLabel(frame, text="Sin pagos registrados").grid(row=1, column=0, columnspan=2, pady=20)
+            ctk.CTkLabel(frame, text="Sin pagos registrados").grid(
+                row=1, column=0, columnspan=2, pady=20)
         else:
             for i, pago in enumerate(pagos, start=1):
                 partes = pago["fecha"].split("-")
                 fecha_txt = f"{partes[2]}/{partes[1]}/{partes[0]}"
                 ctk.CTkLabel(frame, text=fecha_txt).grid(row=i, column=0, padx=20, pady=4)
-                ctk.CTkLabel(frame, text=f"${pago['monto_real']:,}").grid(row=i, column=1, padx=20, pady=4)
+                ctk.CTkLabel(frame, text=f"${pago['monto_real']:,}").grid(
+                    row=i, column=1, padx=20, pady=4)
 
     def _registrar_pago(self, cuenta):
         ventana = ctk.CTkToplevel(self)
@@ -143,11 +171,11 @@ class CasaPadresView(ctk.CTkFrame):
         ventana.geometry("350x300")
         ventana.grab_set()
 
-        ctk.CTkLabel(ventana, text=f"Registrar pago — {cuenta['nombre']}",
-                     font=ctk.CTkFont(weight="bold")).pack(pady=15)
+        ctk.CTkLabel(ventana, text=f"💰 {cuenta['nombre']}",
+                     font=ctk.CTkFont(size=15, weight="bold")).pack(pady=15)
 
         ctk.CTkLabel(ventana, text="Monto real ($):").pack()
-        entry_monto = ctk.CTkEntry(ventana, placeholder_text="ej: 35000")
+        entry_monto = ctk.CTkEntry(ventana, placeholder_text="ej: 79838")
         entry_monto.pack(pady=5)
 
         ctk.CTkLabel(ventana, text="Fecha:").pack()
@@ -168,18 +196,24 @@ class CasaPadresView(ctk.CTkFrame):
         entry_año.insert(0, str(hoy.year))
         entry_año.pack(side="left", padx=4)
 
+        error_label = ctk.CTkLabel(ventana, text="", text_color="#e63946")
+        error_label.pack()
+
         def guardar():
-            monto = entry_monto.get()
+            monto_raw = entry_monto.get().replace(".", "").replace(",", "")
             dia = entry_dia.get().zfill(2)
             mes = entry_mes.get().zfill(2)
             año = entry_año.get()
-            if monto and dia and mes and año:
+            if not monto_raw.isdigit():
+                error_label.configure(text="⚠ Ingresa solo números, sin puntos")
+                return
+            if monto_raw and dia and mes and año:
                 fecha_iso = f"{año}-{mes}-{dia}"
                 mes_iso = f"{año}-{mes}"
                 conn = get_connection()
                 conn.execute(
                     "INSERT INTO pagos (cuenta_id, monto_real, fecha, mes) VALUES (?, ?, ?, ?)",
-                    (cuenta["id"], int(monto), fecha_iso, mes_iso)
+                    (cuenta["id"], int(monto_raw), fecha_iso, mes_iso)
                 )
                 conn.commit()
                 conn.close()
