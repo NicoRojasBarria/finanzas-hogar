@@ -61,9 +61,9 @@ class App(ctk.CTk):
                      font=ctk.CTkFont(size=16)).pack(expand=True)
 
     def mostrar_creditos(self):
-        self._limpiar_main()
-        ctk.CTkLabel(self.main_area, text="💳 Créditos — en construcción",
-                     font=ctk.CTkFont(size=16)).pack(expand=True)
+         self._limpiar_main()
+         from views.creditos import CreditosView
+         CreditosView(self.main_area)
 
     def mostrar_dashboard(self):
         self._limpiar_main()

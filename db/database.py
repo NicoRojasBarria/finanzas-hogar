@@ -37,8 +37,20 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             titular TEXT NOT NULL,
             banco TEXT NOT NULL,
+            numero TEXT,
             cuota INTEGER NOT NULL,
+            cuotas_total INTEGER,
+            cuotas_pagadas INTEGER DEFAULT 0,
+            prox_vencimiento TEXT,
             estado TEXT DEFAULT 'al_dia'
+        );
+
+        CREATE TABLE IF NOT EXISTS pagos_creditos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            credito_id INTEGER NOT NULL,
+            monto_real INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            FOREIGN KEY (credito_id) REFERENCES creditos(id)
         );
 
         CREATE TABLE IF NOT EXISTS ingresos_airbnb (
