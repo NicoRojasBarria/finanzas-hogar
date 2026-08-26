@@ -10,15 +10,19 @@ class App(ctk.CTk):
         self.title("Finanzas Hogar")
         self.geometry("1400x800")
         self.minsize(1200, 600)
-        # Maximizar en Linux y Windows
         try:
             self.state("zoomed")
         except Exception:
             self.attributes("-zoomed", True)
+        try:
+            from tkinter import font as tkfont
+            self.tk.call('font', 'create', 'Orbitron')
+            tkfont.Font(root=self, family='Orbitron', size=11)
+        except Exception:
+            pass
         self._build_layout()
 
     def _build_layout(self):
-        # Sidebar oscuro
         self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color="#1a1a2e")
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
@@ -63,7 +67,6 @@ class App(ctk.CTk):
             text_color="#555577"
         ).pack(side="bottom", pady=15)
 
-        # Área principal
         self.main_area = ctk.CTkFrame(self, fg_color="#212121")
         self.main_area.pack(side="right", fill="both", expand=True)
 
@@ -91,11 +94,8 @@ class App(ctk.CTk):
 
     def mostrar_dashboard(self):
         self._limpiar_main()
-        ctk.CTkLabel(
-            self.main_area,
-            text="📊 Dashboard — en construcción",
-            font=ctk.CTkFont(size=16)
-        ).pack(expand=True)
+        from views.dashboard import DashboardView
+        DashboardView(self.main_area)
 
     def _limpiar_main(self):
         for widget in self.main_area.winfo_children():
