@@ -1,0 +1,70 @@
+import sqlite3
+import os
+
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'finanzas.db')
+
+def get_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.executescript('''
+        CREATE TABLE IF NOT EXISTS cuentas_fijas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            propiedad TEXT NOT NULL,
+            nombre TEXT NOT NULL,
+            identificador TEXT,
+            monto_estimado INTEGER DEFAULT 0,
+            responsable TEXT DEFAULT 'compartido',
+            url_pago TEXT,
+            dia_vencimiento INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS pagos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cuenta_id INTEGER NOT NULL,
+            monto_real INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            mes TEXT NOT NULL,
+            FOREIGN KEY (cuenta_id) REFERENCES cuentas_fijas(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS creditos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    titular TEXT NOT NULL,
+    banco TEXT NOT NULL,
+    numero TEXT,
+    cuota INTEGER NOT NULL,
+    cuotas_total INTEGER,
+    cuotas_pagadas INTEGER DEFAULT 0,
+    prox_vencimiento TEXT,
+    estado TEXT DEFAULT 'al_dia'
+);
+
+CREATE TABLE IF NOT EXISTS pagos_creditos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    credito_id INTEGER NOT NULL,
+    monto_real INTEGER NOT NULL,
+    fecha TEXT NOT NULL,
+    FOREIGN KEY (credito_id) REFERENCES creditos(id)
+);
+        CREATE TABLE IF NOT EXISTS ingresos_airbnb (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha_entrada TEXT NOT NULL,
+            fecha_salida TEXT NOT NULL,
+            monto_bruto INTEGER NOT NULL,
+            comision INTEGER NOT NULL,
+            neto INTEGER NOT NULL
+        );
+    ''')
+
+    conn.commit()
+    conn.close()
+
+if __name__ == '__main__':
+    init_db()
+    print("Base de datos inicializada correctamente")

@@ -5,7 +5,6 @@ from dateutil.relativedelta import relativedelta
 
 
 def _sumar_un_mes(fecha_str):
-    """Dado '05/07/2026' devuelve '05/08/2026'."""
     try:
         dt = datetime.strptime(fecha_str, "%d/%m/%Y")
         return (dt + relativedelta(months=1)).strftime("%d/%m/%Y")
@@ -24,38 +23,69 @@ class CreditosView(ctk.CTkFrame):
             self,
             text="💳 Créditos",
             font=ctk.CTkFont(size=22, weight="bold"),
-        ).pack(pady=(10, 20))
+        ).pack(pady=(10, 5))
+
+        # Tarjetas resumen
+        self.resumen_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.resumen_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         self.scroll = ctk.CTkScrollableFrame(self, fg_color=("#e8e8e8", "#1a1a1a"))
         self.scroll.pack(fill="both", expand=True, padx=10, pady=5)
+
         self._cargar_creditos()
 
     def _cargar_creditos(self):
+        for w in self.resumen_frame.winfo_children():
+            w.destroy()
         for w in self.scroll.winfo_children():
             w.destroy()
 
         conn = get_connection()
         creditos = conn.execute(
-            "SELECT * FROM creditos ORDER BY titular, banco"
+            "SELECT * FROM creditos ORDER BY titular DESC, banco"
         ).fetchall()
         conn.close()
+
+        # ── TARJETAS RESUMEN ────────────────────────────────────────────
+        total_deuda = sum(
+            (cr["cuota"] or 0) * max(0, (cr["cuotas_total"] or 0) - (cr["cuotas_pagadas"] or 0))
+            for cr in creditos if cr["cuotas_total"]
+        )
+        total_cuota_mes = sum(cr["cuota"] or 0 for cr in creditos)
+        judiciales = sum(1 for cr in creditos if cr["estado"] == "judicial")
+        atrasados  = sum(1 for cr in creditos if cr["estado"] == "atrasado")
+
+        tarjetas = [
+            ("💳 Cuotas este mes",  f"${total_cuota_mes:,}",  "#3498db"),
+            ("📉 Deuda total est.", f"${total_deuda:,}",       "#e74c3c"),
+            ("🔴 En judicial",      str(judiciales),            "#e74c3c"),
+            ("⚠️ Atrasados",        str(atrasados),             "#e67e22"),
+        ]
+        for titulo, valor, color in tarjetas:
+            card = ctk.CTkFrame(self.resumen_frame, fg_color="#1e1e2e", corner_radius=10)
+            card.pack(side="left", expand=True, fill="x", padx=8, pady=5)
+            ctk.CTkLabel(card, text=titulo, font=ctk.CTkFont(size=11),
+                         text_color="#aaaaaa").pack(pady=(12, 2))
+            ctk.CTkLabel(card, text=valor, font=ctk.CTkFont(size=20, weight="bold"),
+                         text_color=color).pack(pady=(0, 12))
 
         if not creditos:
             ctk.CTkLabel(self.scroll, text="Sin créditos registrados",
                          font=ctk.CTkFont(size=14)).pack(pady=40)
             return
 
+        # ── ENCABEZADOS ─────────────────────────────────────────────────
         header = ctk.CTkFrame(self.scroll, fg_color="#1a1a2e")
         header.pack(fill="x", padx=5, pady=(0, 4))
         cols = [
-            ("Titular",      110), ("Banco",       125), ("N° Crédito",  140),
-            ("Cuota",         90), ("Pagadas",       80), ("Restantes",    80),
-            ("Últ. Pago",    130), ("Próx. Vcto.",  115), ("Estado",      115),
-            ("Acciones",     130),
+            ("Titular",      100), ("Banco",       120), ("N° Crédito",  140),
+            ("Cuota",         95), ("Pagadas",       75), ("Restantes",    75),
+            ("Últ. Pago",    130), ("Próx. Vcto.",  110), ("Estado",      110),
+            ("Acciones",     240),
         ]
         for texto, ancho in cols:
             ctk.CTkLabel(header, text=texto, font=ctk.CTkFont(weight="bold"),
-                         width=ancho, anchor="w").pack(side="left", padx=5, pady=6)
+                         width=ancho, anchor="w").pack(side="left", padx=4, pady=6)
 
         for cr in creditos:
             self._fila(cr)
@@ -77,7 +107,10 @@ class CreditosView(ctk.CTkFrame):
         return None, None
 
     def _fila(self, cr):
-        estado = cr["estado"]
+        estado  = cr["estado"]
+        titular = cr["titular"]
+
+        # Color fondo por estado
         bg = {"judicial": "#3b0000", "atrasado": "#2b1a00"}.get(estado, "#1e1e1e")
 
         fila = ctk.CTkFrame(self.scroll, fg_color=bg, corner_radius=6)
@@ -91,10 +124,13 @@ class CreditosView(ctk.CTkFrame):
         monto_ult, fecha_ult = self._ultimo_pago(cr["id"])
         ult_txt = f"${monto_ult:,}\n{fecha_ult}" if monto_ult else "Sin pagos"
 
-        # Próx. vencimiento: directo de la BD, sin cálculos
         prox_vcto = cr["prox_vencimiento"] or "—"
 
         color_cuota = "#e74c3c" if estado in ("judicial", "atrasado") else "#3498db"
+
+        # Color titular: Nico = celeste, Mama = violeta
+        color_titular = "#00bcd4" if titular == "Nico" else "#ce93d8"
+
         etiqueta, color_estado = {
             "al_dia":   ("✅ Al día",    "#2ecc71"),
             "atrasado": ("⚠️ Atrasado", "#e67e22"),
@@ -105,38 +141,38 @@ class CreditosView(ctk.CTkFrame):
             ctk.CTkLabel(fila, text=str(texto),
                          font=ctk.CTkFont(weight="bold" if bold else "normal"),
                          width=ancho, anchor="w", text_color=color,
-                         justify="left").pack(side="left", padx=5, pady=8)
+                         justify="left").pack(side="left", padx=4, pady=8)
 
-        celda(cr["titular"],           110)
-        celda(cr["banco"],             125)
+        celda(titular,                 100, color_titular, bold=True)
+        celda(cr["banco"],             120)
         celda(cr["numero"] or "—",     140, "#aaaaaa")
-        celda(f"${cr['cuota']:,}",      90, color_cuota, bold=True)
-        celda(pagadas_txt,              80)
-        celda(restantes,                80)
+        celda(f"${cr['cuota']:,}",      95, color_cuota, bold=True)
+        celda(pagadas_txt,              75)
+        celda(restantes,                75)
         celda(ult_txt,                 130)
-        celda(prox_vcto,               115)
-        celda(etiqueta,                115, color_estado, bold=True)
+        celda(prox_vcto,               110)
+        celda(etiqueta,                110, color_estado, bold=True)
 
         btns = ctk.CTkFrame(fila, fg_color="transparent")
-        btns.pack(side="left", padx=4)
+        btns.pack(side="left", padx=3)
 
         ctk.CTkButton(
-            btns, text="💰 Pagar", width=82,
+            btns, text="💰 Pagar", width=78,
             fg_color="#27ae60", hover_color="#1e8449",
             command=lambda c=cr: self._registrar_pago(c),
         ).pack(side="left", padx=2, pady=6)
 
         ctk.CTkButton(
-            btns, text="📋 Historial", width=92,
+            btns, text="📋 Historial", width=88,
             fg_color="#2980b9", hover_color="#1a6fa1",
             command=lambda c=cr: self._ver_historial(c),
         ).pack(side="left", padx=2, pady=6)
 
         ctk.CTkButton(
-            btns, text="↩", width=36, height=36,
-            corner_radius=18,
+            btns, text="↩", width=34, height=34,
+            corner_radius=17,
             fg_color="#555", hover_color="#333",
-            font=ctk.CTkFont(size=16),
+            font=ctk.CTkFont(size=15),
             command=lambda c=cr: self._deshacer_pago(c),
         ).pack(side="left", padx=2, pady=6)
 
@@ -186,7 +222,6 @@ class CreditosView(ctk.CTkFrame):
                     "UPDATE creditos SET cuotas_pagadas = cuotas_pagadas + 1 WHERE id = ?",
                     (cr["id"],),
                 )
-                # Avanzar prox_vencimiento un mes
                 nuevo_vcto = _sumar_un_mes(cr["prox_vencimiento"]) if cr["prox_vencimiento"] else None
                 if nuevo_vcto:
                     conn.execute(
@@ -225,11 +260,9 @@ class CreditosView(ctk.CTkFrame):
             "UPDATE creditos SET cuotas_pagadas = ? WHERE id = ?",
             (max(0, pagadas_actual - 1), cr["id"]),
         )
-        # Retroceder prox_vencimiento un mes
-        vcto_actual = cr["prox_vencimiento"]
-        if vcto_actual:
+        if cr["prox_vencimiento"]:
             try:
-                dt = datetime.strptime(vcto_actual, "%d/%m/%Y")
+                dt = datetime.strptime(cr["prox_vencimiento"], "%d/%m/%Y")
                 anterior = (dt - relativedelta(months=1)).strftime("%d/%m/%Y")
                 conn.execute(
                     "UPDATE creditos SET prox_vencimiento = ? WHERE id = ?",
