@@ -42,6 +42,7 @@ class App(ctk.CTk):
             ("🏠  Casa Padres",  self.mostrar_casa_padres),
             ("🏢  Departamento", self.mostrar_depa),
             ("💳  Créditos",     self.mostrar_creditos),
+            ("💵  Ingresos",      self.mostrar_ingresos),
             ("📊  Dashboard",    self.mostrar_dashboard),
         ]
 
@@ -100,6 +101,11 @@ class App(ctk.CTk):
     def _limpiar_main(self):
         for widget in self.main_area.winfo_children():
             widget.destroy()
+
+    def mostrar_ingresos(self):
+        self._limpiar_main()
+        from views.ingresos import IngresosView
+        IngresosView(self.main_area)
 
 if __name__ == "__main__":
     init_db()
