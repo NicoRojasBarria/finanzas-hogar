@@ -190,7 +190,10 @@ class DepartamentoView(ctk.CTkFrame):
                          width=ancho, anchor="w", text_color=color).pack(side="left", padx=6, pady=8)
 
         celda(cuenta["nombre"],                          140)
-        celda(cuenta["identificador"] or "—",            130, "#aaaaaa")
+        entry_id = ctk.CTkEntry(fila, width=125)
+        entry_id.insert(0, cuenta["identificador"] or "—")
+        entry_id.configure(state="readonly")
+        entry_id.pack(side="left", padx=6, pady=8)
         celda(f"${monto_ult:,}" if monto_ult else "Sin pagos", 100)
         celda(fecha_ult or "—",                          110)
         celda(f"${cuenta['monto_estimado']:,}" if cuenta["monto_estimado"] else "—", 120, "#3498db")

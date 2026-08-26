@@ -145,7 +145,10 @@ class CreditosView(ctk.CTkFrame):
 
         celda(titular,                 100, color_titular, bold=True)
         celda(cr["banco"],             120)
-        celda(cr["numero"] or "—",     140, "#aaaaaa")
+        entry_num = ctk.CTkEntry(fila, width=135)
+        entry_num.insert(0, cr["numero"] or "—")
+        entry_num.configure(state="readonly")
+        entry_num.pack(side="left", padx=4, pady=8)
         celda(f"${cr['cuota']:,}",      95, color_cuota, bold=True)
         celda(pagadas_txt,              75)
         celda(restantes,                75)
