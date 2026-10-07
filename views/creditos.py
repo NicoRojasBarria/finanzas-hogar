@@ -24,17 +24,25 @@ def _plural(n, singular, plural):
 class CreditosView(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color=tema.FONDO, corner_radius=0)
-        self.pack(fill="both", expand=True)
+        self.place(relx=0, rely=0, relwidth=1, relheight=1)
         self._build()
 
     def _build(self):
-        # Encabezado: se rellena en _actualizar_resumen()
+        # Grid de 3 filas: cabecera fija | tarjetas fijas | tabla expandible
+        self.grid_rowconfigure(0, weight=0)   # cabecera
+        self.grid_rowconfigure(1, weight=0)   # tarjetas
+        self.grid_rowconfigure(2, weight=1)   # tabla — toma todo el alto restante
+        self.grid_columnconfigure(0, weight=1)
+
+        # Encabezado
         self.cabecera = ctk.CTkFrame(self, fg_color="transparent")
-        self.cabecera.pack(fill="x", padx=(34, 30), pady=(24, 0))
+        self.cabecera.grid(row=0, column=0, sticky="ew",
+                           padx=(34, 30), pady=(24, 0))
 
         # Tarjetas resumen: se crean UNA vez y después solo se actualizan
         fila_tarjetas = ctk.CTkFrame(self, fg_color="transparent")
-        fila_tarjetas.pack(fill="x", padx=(28, 24), pady=(14, 10))
+        fila_tarjetas.grid(row=1, column=0, sticky="ew",
+                           padx=(28, 24), pady=(14, 10))
         self.tarjetas = {}
         colores = [("pagado", tema.VERDE), ("falta", tema.AMBAR),
                    ("proximo", tema.AZUL), ("deuda", tema.ROJO)]
@@ -44,13 +52,18 @@ class CreditosView(ctk.CTkFrame):
             tarjeta.grid(row=0, column=i, sticky="ew")
             self.tarjetas[clave] = tarjeta
 
-        self.scroll = ctk.CTkScrollableFrame(self, fg_color=("#e8e8e8", "#1a1a1a"))
-        self.scroll.pack(fill="both", expand=True, padx=10, pady=5)
+        # Contenedor de la tabla: ocupa toda la fila 2
+        self.contenedor_tabla = ctk.CTkFrame(self, fg_color="transparent")
+        self.contenedor_tabla.grid(row=2, column=0, sticky="nsew",
+                                   padx=(28, 24), pady=(0, 12))
+        self.contenedor_tabla.grid_rowconfigure(0, weight=1)
+        self.contenedor_tabla.grid_columnconfigure(0, weight=1)
 
         self._cargar_creditos()
 
     def _cargar_creditos(self):
-        for w in self.scroll.winfo_children():
+        # Destruir la tabla anterior completa (si existe)
+        for w in self.contenedor_tabla.winfo_children():
             w.destroy()
 
         conn = get_connection()
@@ -62,22 +75,16 @@ class CreditosView(ctk.CTkFrame):
         self._actualizar_resumen(creditos)
 
         if not creditos:
-            ctk.CTkLabel(self.scroll, text="Sin créditos registrados",
-                         font=ctk.CTkFont(size=14)).pack(pady=40)
+            ctk.CTkLabel(self.contenedor_tabla, text="Sin créditos registrados",
+                         font=tema.fuente(14), text_color=tema.TEXTO_SUAVE).pack(pady=40)
             return
 
-        # ── ENCABEZADOS ─────────────────────────────────────────────────
-        header = ctk.CTkFrame(self.scroll, fg_color="#1a1a2e")
-        header.pack(fill="x", padx=5, pady=(0, 4))
-        cols = [
-            ("Titular",      100), ("Banco",       120), ("N° Crédito",  140),
-            ("Cuota",         95), ("Pagadas",       75), ("Restantes",    75),
-            ("Últ. Pago",    130), ("Próx. Vcto.",  110), ("Estado",      110),
-            ("Acciones",     240),
+        COLS = [
+            ("Titular", 150), ("Banco", 190), ("Cuota", 170), ("Avance", 150),
+            ("Próx. vencimiento", 160), ("Estado", 150), ("Acciones", 220),
         ]
-        for texto, ancho in cols:
-            ctk.CTkLabel(header, text=texto, font=ctk.CTkFont(weight="bold"),
-                         width=ancho, anchor="w").pack(side="left", padx=4, pady=6)
+        self.tabla = ui.Tabla(self.contenedor_tabla, COLS, destacada=2)
+        self.tabla.grid(row=0, column=0, sticky="nsew")
 
         for cr in creditos:
             self._fila(cr)
@@ -145,119 +152,163 @@ class CreditosView(ctk.CTkFrame):
     def _fila(self, cr):
         terminado = not credito_activo(cr)
         planilla  = es_planilla(cr)
-        estado  = "terminado" if terminado else ("planilla" if planilla and cr["estado"] == "al_dia" else cr["estado"])
-        titular = cr["titular"]
+        estado    = ("terminado" if terminado
+                     else "planilla" if planilla and cr["estado"] == "al_dia"
+                     else cr["estado"])
+        _, color_estado = tema.estado(estado)
+        problema  = estado in ("judicial", "atrasado")
 
-        # Color fondo por estado
-        bg = {"judicial": "#3b0000", "atrasado": "#2b1a00"}.get(estado, "#1e1e1e")
+        celdas, fondo = self.tabla.fila(color_estado, resaltar=problema)
 
-        fila = ctk.CTkFrame(self.scroll, fg_color=bg, corner_radius=6)
-        fila.pack(fill="x", padx=5, pady=3)
-
-        pagadas     = cr["cuotas_pagadas"] or 0
-        total       = cr["cuotas_total"]   or 0
-        restantes   = max(0, total - pagadas) if total else "—"
-        pagadas_txt = f"{pagadas}/{total}" if total else "—"
-
+        pagadas   = cr["cuotas_pagadas"] or 0
+        total     = cr["cuotas_total"]   or 0
         monto_ult, fecha_ult = self._ultimo_pago(cr["id"])
-        ult_txt = f"${monto_ult:,}\n{fecha_ult}" if monto_ult else "Sin pagos"
+        avance_sub = (f"Últ. {tema.pesos(monto_ult)}  {fecha_ult}"
+                      if monto_ult else "Sin pagos")
 
-        prox_vcto = "—" if terminado else ("Desc. sueldo" if planilla else (cr["prox_vencimiento"] or "—"))
+        # Titular ────────────────────────────────────────────────────────
+        titular = cr["titular"]
+        ctk.CTkLabel(
+            celdas[0], text=f"  {titular}",
+            image=ui.avatar(titular, 34), compound="left",
+            font=tema.fuente(14, "bold"),
+            text_color=tema.TEXTO, anchor="w",
+        ).pack(side="left")
 
-        color_cuota = "#e74c3c" if estado in ("judicial", "atrasado") else "#3498db"
+        # Banco / número ─────────────────────────────────────────────────
+        numero = cr["numero"] or "—"
+        caja_banco = ui.texto_doble(celdas[1], cr["banco"], numero)
+        self.after(10, lambda b=caja_banco, n=numero: self._bind_numero(b, n))
 
-        # Color titular: Nico = celeste, Mama = violeta
-        color_titular = "#00bcd4" if titular == "Nico" else "#ce93d8"
+        # Cuota destacada ────────────────────────────────────────────────
+        color_cuota = (tema.GRIS if terminado
+                       else color_estado if problema
+                       else tema.AZUL)
+        sub_cuota = "pagado completo" if terminado else "mensual"
+        ui.celda_destacada(celdas[2], tema.pesos(cr["cuota"]),
+                           sub_cuota, color=color_cuota, fondo=fondo)
+
+        # Avance ─────────────────────────────────────────────────────────
+        color_barra = tema.GRIS if terminado else tema.AZUL
+        marco_av = ctk.CTkFrame(celdas[3], fg_color="transparent")
+        marco_av.pack(side="left", fill="y", pady=10)
+        ui.BarraAvance(marco_av, pagadas, total,
+                       color=color_barra, ancho=120).pack(anchor="w")
+        ctk.CTkLabel(marco_av, text=avance_sub,
+                     font=tema.fuente(11), text_color=tema.TEXTO_TENUE,
+                     anchor="w").pack(anchor="w", pady=(2, 0))
+
+        # Próx. vencimiento ──────────────────────────────────────────────
         if terminado:
-            color_cuota = "#666666"
+            vtext, vsub, vcolor = "—", None, tema.TEXTO_TENUE
+        elif planilla:
+            vtext, vsub, vcolor = "Desc. por sueldo", None, tema.VIOLETA
+        elif not cr["prox_vencimiento"]:
+            vtext, vsub, vcolor = "—", None, tema.TEXTO_TENUE
+        else:
+            try:
+                dt_vcto = datetime.strptime(cr["prox_vencimiento"], "%d/%m/%Y").date()
+                dias    = (dt_vcto - date.today()).days
+                vtext   = cr["prox_vencimiento"]
+                if dias < 0:
+                    vsub, vcolor = f"vencido hace {-dias}d", tema.ROJO
+                elif dias == 0:
+                    vsub, vcolor = "vence hoy", tema.AMBAR
+                elif dias <= 5:
+                    vsub, vcolor = f"en {dias} día{'s' if dias != 1 else ''}", tema.AMBAR
+                else:
+                    vsub, vcolor = f"en {dias} días", tema.TEXTO
+            except Exception:
+                vtext, vsub, vcolor = cr["prox_vencimiento"], None, tema.TEXTO
+        ui.texto_doble(celdas[4], vtext, vsub, color=vcolor, fuente=tema.fuente(13))
 
-        etiqueta, color_estado = {
-            "al_dia":   ("✅ Al día",    "#2ecc71"),
-            "atrasado": ("⚠️ Atrasado", "#e67e22"),
-            "judicial": ("🔴 Judicial",  "#e74c3c"),
-            "terminado": ("🏁 Terminado", "#888888"),
-            "planilla":  ("🧾 Planilla",  "#9b8fd9"),
-        }.get(estado, (estado, "#aaaaaa"))
+        # Estado ─────────────────────────────────────────────────────────
+        ui.Badge(celdas[5], estado, fondo=fondo).pack(side="left", pady=20)
 
-        def celda(texto, ancho, color="#e0e0e0", bold=False):
-            ctk.CTkLabel(fila, text=str(texto),
-                         font=ctk.CTkFont(weight="bold" if bold else "normal"),
-                         width=ancho, anchor="w", text_color=color,
-                         justify="left").pack(side="left", padx=4, pady=8)
+        # Acciones ───────────────────────────────────────────────────────
+        if not terminado and not planilla:
+            ui.boton(celdas[6], "Pagar",
+                     command=lambda c=cr: self._registrar_pago(c),
+                     tipo="primario", color=tema.VERDE, ancho=84,
+                     ).pack(side="left", padx=(0, 8))
+        ui.boton(celdas[6], "Historial",
+                 command=lambda c=cr: self._ver_historial(c),
+                 tipo="secundario", color=tema.AZUL, ancho=92,
+                 ).pack(side="left", padx=(0, 6))
+        if not terminado:
+            ui.boton(celdas[6], "↩",
+                     command=lambda c=cr: self._deshacer_pago(c),
+                     tipo="secundario", color=tema.TEXTO_SUAVE, ancho=40,
+                     ).pack(side="left")
 
-        celda(titular,                 100, color_titular, bold=True)
-        celda(cr["banco"],             120)
-        entry_num = ctk.CTkEntry(fila, width=135)
-        entry_num.insert(0, cr["numero"] or "—")
-        entry_num.configure(state="readonly")
-        entry_num.pack(side="left", padx=4, pady=8)
-        celda(f"${cr['cuota']:,}",      95, color_cuota, bold=True)
-        celda(pagadas_txt,              75)
-        celda(restantes,                75)
-        celda(ult_txt,                 130)
-        celda(prox_vcto,               110)
-        celda(etiqueta,                110, color_estado, bold=True)
+    def _bind_numero(self, caja_banco, numero):
+        """Hace clicable el label del número de crédito (copia al portapapeles)."""
+        try:
+            lbl = [w for w in caja_banco.winfo_children()
+                   if isinstance(w, ctk.CTkLabel)][-1]
+            lbl.configure(cursor="hand2")
+            lbl.bind("<Button-1>",
+                     lambda e, n=numero, l=lbl: self._copiar_numero(n, l))
+        except Exception:
+            pass
 
-        btns = ctk.CTkFrame(fila, fg_color="transparent")
-        btns.pack(side="left", padx=3)
-
-        ctk.CTkButton(
-            btns, text="💰 Pagar", width=78,
-            fg_color="#27ae60", hover_color="#1e8449",
-            command=lambda c=cr: self._registrar_pago(c),
-        ).pack(side="left", padx=2, pady=6)
-
-        ctk.CTkButton(
-            btns, text="📋 Historial", width=88,
-            fg_color="#2980b9", hover_color="#1a6fa1",
-            command=lambda c=cr: self._ver_historial(c),
-        ).pack(side="left", padx=2, pady=6)
-
-        ctk.CTkButton(
-            btns, text="↩", width=34, height=34,
-            corner_radius=17,
-            fg_color="#555", hover_color="#333",
-            font=ctk.CTkFont(size=15),
-            command=lambda c=cr: self._deshacer_pago(c),
-        ).pack(side="left", padx=2, pady=6)
+    def _copiar_numero(self, numero, lbl):
+        self.clipboard_clear()
+        self.clipboard_append(numero)
+        orig_text  = lbl.cget("text")
+        orig_color = lbl.cget("text_color")
+        lbl.configure(text="✓ Copiado", text_color=tema.VERDE)
+        self.after(1400, lambda: lbl.configure(text=orig_text,
+                                               text_color=orig_color))
 
     def _registrar_pago(self, cr):
         win = ctk.CTkToplevel(self)
         win.title(f"Pagar — {cr['titular']} / {cr['banco']}")
-        win.geometry("360x330")
+        win.geometry("380x340")
+        win.configure(fg_color=tema.FONDO)
         win.grab_set()
 
         ctk.CTkLabel(win, text=f"{cr['titular']} — {cr['banco']}",
-                     font=ctk.CTkFont(weight="bold", size=14)).pack(pady=15)
+                     font=tema.fuente(14, "bold"),
+                     text_color=tema.TEXTO).pack(pady=16)
 
-        ctk.CTkLabel(win, text="Monto pagado ($):").pack()
-        entry_monto = ctk.CTkEntry(win, placeholder_text=f"ej: {cr['cuota']:,}")
-        entry_monto.pack(pady=5)
+        ctk.CTkLabel(win, text="Monto pagado ($):",
+                     font=tema.fuente(13), text_color=tema.TEXTO_SUAVE).pack()
+        entry_monto = ctk.CTkEntry(
+            win, placeholder_text=tema.pesos(cr["cuota"]),
+            font=tema.fuente(13), width=220,
+            fg_color=tema.SUPERFICIE, border_color=tema.LINEA,
+            text_color=tema.TEXTO)
+        entry_monto.pack(pady=6)
 
-        ctk.CTkLabel(win, text="Fecha (DD / MM / AAAA):").pack()
+        ctk.CTkLabel(win, text="Fecha (DD / MM / AAAA):",
+                     font=tema.fuente(13), text_color=tema.TEXTO_SUAVE).pack()
         ff = ctk.CTkFrame(win, fg_color="transparent")
-        ff.pack(pady=5)
+        ff.pack(pady=6)
         hoy = date.today()
+        campos = []
+        for ph, w, val in [("DD", 58, str(hoy.day).zfill(2)),
+                            ("MM", 58, str(hoy.month).zfill(2)),
+                            ("AAAA", 78, str(hoy.year))]:
+            e = ctk.CTkEntry(ff, width=w, placeholder_text=ph,
+                             fg_color=tema.SUPERFICIE, border_color=tema.LINEA,
+                             text_color=tema.TEXTO, font=tema.fuente(13))
+            e.insert(0, val)
+            e.pack(side="left", padx=4)
+            campos.append(e)
+        e_dia, e_mes, e_anio = campos
 
-        e_dia = ctk.CTkEntry(ff, width=55, placeholder_text="DD")
-        e_dia.insert(0, str(hoy.day).zfill(2))
-        e_dia.pack(side="left", padx=4)
-
-        e_mes = ctk.CTkEntry(ff, width=55, placeholder_text="MM")
-        e_mes.insert(0, str(hoy.month).zfill(2))
-        e_mes.pack(side="left", padx=4)
-
-        e_anio = ctk.CTkEntry(ff, width=75, placeholder_text="AAAA")
-        e_anio.insert(0, str(hoy.year))
-        e_anio.pack(side="left", padx=4)
-
-        lbl_err = ctk.CTkLabel(win, text="", text_color="#e74c3c")
+        lbl_err = ctk.CTkLabel(win, text="", text_color=tema.ROJO,
+                               font=tema.fuente(12))
         lbl_err.pack()
 
         def guardar():
             try:
                 monto = int(entry_monto.get().replace(".", "").replace(",", ""))
+                if monto <= 0:
+                    raise ValueError
                 fecha_iso = f"{e_anio.get()}-{e_mes.get().zfill(2)}-{e_dia.get().zfill(2)}"
+                datetime.strptime(fecha_iso, "%Y-%m-%d")  # valida la fecha
                 conn = get_connection()
                 conn.execute(
                     "INSERT INTO pagos_creditos (credito_id, monto_real, fecha) VALUES (?, ?, ?)",
@@ -278,10 +329,10 @@ class CreditosView(ctk.CTkFrame):
                 win.destroy()
                 self._cargar_creditos()
             except ValueError:
-                lbl_err.configure(text="Monto inválido — solo números")
+                lbl_err.configure(text="Monto o fecha inválidos — revisa los campos")
 
-        ctk.CTkButton(win, text="Guardar", command=guardar,
-                      fg_color="#27ae60").pack(pady=15)
+        ui.boton(win, "Guardar", command=guardar,
+                 tipo="primario", color=tema.VERDE, ancho=200).pack(pady=14)
 
     def _deshacer_pago(self, cr):
         conn = get_connection()
@@ -293,17 +344,20 @@ class CreditosView(ctk.CTkFrame):
         if not ultimo:
             conn.close()
             win = ctk.CTkToplevel(self)
+            win.configure(fg_color=tema.FONDO)
             win.title("Sin pagos")
-            win.geometry("280x120")
-            ctk.CTkLabel(win, text="No hay pagos para deshacer.").pack(expand=True)
-            ctk.CTkButton(win, text="Cerrar", command=win.destroy).pack(pady=10)
+            win.geometry("300x130")
+            win.grab_set()
+            ctk.CTkLabel(win, text="No hay pagos para deshacer.",
+                         font=tema.fuente(13), text_color=tema.TEXTO).pack(expand=True)
+            ui.boton(win, "Cerrar", command=win.destroy,
+                     tipo="secundario", ancho=120).pack(pady=10)
             return
 
         conn.execute("DELETE FROM pagos_creditos WHERE id = ?", (ultimo["id"],))
-        pagadas_actual = cr["cuotas_pagadas"] or 0
         conn.execute(
-            "UPDATE creditos SET cuotas_pagadas = ? WHERE id = ?",
-            (max(0, pagadas_actual - 1), cr["id"]),
+            "UPDATE creditos SET cuotas_pagadas = MAX(0, cuotas_pagadas - 1) WHERE id = ?",
+            (cr["id"],),
         )
         if cr["prox_vencimiento"]:
             try:
@@ -330,24 +384,25 @@ class CreditosView(ctk.CTkFrame):
 
         win = ctk.CTkToplevel(self)
         win.title(f"Historial — {cr['titular']} / {cr['banco']}")
-        win.geometry("380x420")
+        win.geometry("400x440")
+        win.configure(fg_color=tema.FONDO)
         win.grab_set()
 
-        ctk.CTkLabel(win, text=f"📋 {cr['titular']} — {cr['banco']}",
-                     font=ctk.CTkFont(weight="bold", size=14)).pack(pady=15)
+        cab_his = ctk.CTkFrame(win, fg_color="transparent")
+        cab_his.pack(fill="x", padx=20, pady=(16, 8))
+        ctk.CTkLabel(cab_his, image=ui.avatar(cr["titular"], 30),
+                     text="").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(cab_his,
+                     text=f"{cr['titular']} — {cr['banco']}",
+                     font=tema.fuente(14, "bold"),
+                     text_color=tema.TEXTO).pack(side="left")
 
-        frame = ctk.CTkScrollableFrame(win)
-        frame.pack(fill="both", expand=True, padx=15, pady=5)
-
-        hdr = ctk.CTkFrame(frame, fg_color="#1a1a2e")
-        hdr.pack(fill="x", pady=(0, 4))
-        ctk.CTkLabel(hdr, text="Fecha", width=160, anchor="w",
-                     font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10, pady=6)
-        ctk.CTkLabel(hdr, text="Monto", width=160, anchor="w",
-                     font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10, pady=6)
+        tabla_his = ui.Tabla(win, [("Fecha", 160), ("Monto", 200)], destacada=1)
+        tabla_his.pack(fill="both", expand=True, padx=16, pady=(0, 8))
 
         if not pagos:
-            ctk.CTkLabel(frame, text="Sin pagos registrados").pack(pady=20)
+            ctk.CTkLabel(tabla_his.cuerpo, text="Sin pagos registrados",
+                         font=tema.fuente(13), text_color=tema.TEXTO_SUAVE).pack(pady=20)
         else:
             for p in pagos:
                 try:
@@ -355,12 +410,12 @@ class CreditosView(ctk.CTkFrame):
                     fecha_txt = dt.strftime("%d/%m/%Y")
                 except Exception:
                     fecha_txt = p["fecha"]
-                fila = ctk.CTkFrame(frame, fg_color="#1e1e1e", corner_radius=4)
-                fila.pack(fill="x", pady=2)
-                ctk.CTkLabel(fila, text=fecha_txt, width=160,
-                             anchor="w").pack(side="left", padx=10, pady=6)
-                ctk.CTkLabel(fila, text=f"${p['monto_real']:,}", width=160,
-                             anchor="w", text_color="#3498db").pack(side="left", padx=10, pady=6)
+                celdas_h, _ = tabla_his.fila()
+                ctk.CTkLabel(celdas_h[0], text=fecha_txt,
+                             font=tema.fuente(13), text_color=tema.TEXTO,
+                             anchor="w").pack(side="left", padx=8)
+                ui.celda_destacada(celdas_h[1], tema.pesos(p["monto_real"]),
+                                   color=tema.AZUL)
 
-        ctk.CTkButton(win, text="Cerrar", command=win.destroy,
-                      fg_color="#555").pack(pady=12)
+        ui.boton(win, "Cerrar", command=win.destroy,
+                 tipo="secundario", ancho=130).pack(pady=10)

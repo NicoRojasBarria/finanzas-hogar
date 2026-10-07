@@ -201,14 +201,45 @@ class Badge(ctk.CTkFrame):
                      text_color=color, height=24).pack(padx=10, pady=2)
 
 
+import os as _os
+
 _cache_avatar = {}
+_AVATARES_DIR = _os.path.join(_os.path.dirname(__file__), "..", "assets", "avatares")
+
+
+def _png_personalizado(nombre):
+    """Busca un PNG en assets/avatares/ para el nombre dado.
+
+    Prueba: mama.png → mamá.png → nico.png, etc.
+    Devuelve la ruta si existe, si no None.
+    """
+    clave = (nombre or "").strip().lower().replace("á","a").replace("é","e").replace(
+        "í","i").replace("ó","o").replace("ú","u").replace("ñ","n")
+    ruta = _os.path.join(_AVATARES_DIR, f"{clave}.png")
+    return ruta if _os.path.exists(ruta) else None
 
 
 def avatar(nombre, size=34):
-    """Círculo con la inicial de la persona, en su color."""
+    """Avatar de la persona: PNG personalizado si existe, inicial si no."""
     clave = (nombre, size)
     if clave in _cache_avatar:
         return _cache_avatar[clave]
+
+    ruta = _png_personalizado(nombre)
+    if ruta:
+        img = Image.open(ruta).resize((size * 4, size * 4), Image.LANCZOS)
+        # Recorte circular
+        mascara = Image.new("L", img.size, 0)
+        from PIL import ImageDraw as _ID
+        _ID.Draw(mascara).ellipse((0, 0, img.size[0]-1, img.size[1]-1), fill=255)
+        resultado = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        resultado.paste(img.convert("RGBA"), mask=mascara)
+        resultado = resultado.resize((size, size), Image.LANCZOS)
+        imagen = ctk.CTkImage(light_image=resultado, dark_image=resultado, size=(size, size))
+        _cache_avatar[clave] = imagen
+        return imagen
+
+    # Fallback: círculo con inicial
     k = 4
     D = size * k
     color = tema.rgb(tema.color_persona(nombre))
