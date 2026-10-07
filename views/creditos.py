@@ -2,6 +2,7 @@ import customtkinter as ctk
 from db.database import get_connection
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
+from services.resumen import resumen_mes, credito_activo, es_planilla
 
 
 def _sumar_un_mes(fecha_str):
@@ -47,27 +48,28 @@ class CreditosView(ctk.CTkFrame):
         conn.close()
 
         # ── TARJETAS RESUMEN ────────────────────────────────────────────
-        total_deuda = sum(
-            (cr["cuota"] or 0) * max(0, (cr["cuotas_total"] or 0) - (cr["cuotas_pagadas"] or 0))
-            for cr in creditos if cr["cuotas_total"]
-        )
-        total_cuota_mes = sum(cr["cuota"] or 0 for cr in creditos)
-        judiciales = sum(1 for cr in creditos if cr["estado"] == "judicial")
-        atrasados  = sum(1 for cr in creditos if cr["estado"] == "atrasado")
-
+        r = resumen_mes()
+        falta = r["falta_creditos"]
         tarjetas = [
-            ("💳 Cuotas este mes",  f"${total_cuota_mes:,}",  "#3498db"),
-            ("📉 Deuda total est.", f"${total_deuda:,}",       "#e74c3c"),
-            ("🔴 En judicial",      str(judiciales),            "#e74c3c"),
-            ("⚠️ Atrasados",        str(atrasados),             "#e67e22"),
+            (f"✅ Pagado en {r['mes']}", f"${r['pagado_creditos']:,}", "#2ecc71",
+             f"{r['n_pagos_creditos']} pago(s) registrados"),
+            (f"⏳ Falta pagar en {r['mes']}", f"${falta:,}",
+             "#e67e22" if falta else "#2ecc71",
+             f"{r['n_falta_creditos']} cuota(s) pendientes" if falta else "Nada pendiente 🎉"),
+            (f"📅 Viene en {r['mes_prox']}", f"${r['proximo_creditos']:,}", "#3498db",
+             f"{r['n_proximo_creditos']} cuota(s)"),
+            ("📉 Deuda restante", f"${r['deuda']:,}", "#e74c3c",
+             f"{r['judiciales']} judicial · {r['atrasados']} atrasados"),
         ]
-        for titulo, valor, color in tarjetas:
+        for titulo, valor, color, sub in tarjetas:
             card = ctk.CTkFrame(self.resumen_frame, fg_color="#1e1e2e", corner_radius=10)
             card.pack(side="left", expand=True, fill="x", padx=8, pady=5)
             ctk.CTkLabel(card, text=titulo, font=ctk.CTkFont(size=11),
                          text_color="#aaaaaa").pack(pady=(12, 2))
             ctk.CTkLabel(card, text=valor, font=ctk.CTkFont(size=20, weight="bold"),
-                         text_color=color).pack(pady=(0, 12))
+                         text_color=color).pack()
+            ctk.CTkLabel(card, text=sub, font=ctk.CTkFont(size=11),
+                         text_color="#777799").pack(pady=(2, 12))
 
         if not creditos:
             ctk.CTkLabel(self.scroll, text="Sin créditos registrados",
@@ -107,7 +109,9 @@ class CreditosView(ctk.CTkFrame):
         return None, None
 
     def _fila(self, cr):
-        estado  = cr["estado"]
+        terminado = not credito_activo(cr)
+        planilla  = es_planilla(cr)
+        estado  = "terminado" if terminado else ("planilla" if planilla and cr["estado"] == "al_dia" else cr["estado"])
         titular = cr["titular"]
 
         # Color fondo por estado
@@ -124,17 +128,21 @@ class CreditosView(ctk.CTkFrame):
         monto_ult, fecha_ult = self._ultimo_pago(cr["id"])
         ult_txt = f"${monto_ult:,}\n{fecha_ult}" if monto_ult else "Sin pagos"
 
-        prox_vcto = cr["prox_vencimiento"] or "—"
+        prox_vcto = "—" if terminado else ("Desc. sueldo" if planilla else (cr["prox_vencimiento"] or "—"))
 
         color_cuota = "#e74c3c" if estado in ("judicial", "atrasado") else "#3498db"
 
         # Color titular: Nico = celeste, Mama = violeta
         color_titular = "#00bcd4" if titular == "Nico" else "#ce93d8"
+        if terminado:
+            color_cuota = "#666666"
 
         etiqueta, color_estado = {
             "al_dia":   ("✅ Al día",    "#2ecc71"),
             "atrasado": ("⚠️ Atrasado", "#e67e22"),
             "judicial": ("🔴 Judicial",  "#e74c3c"),
+            "terminado": ("🏁 Terminado", "#888888"),
+            "planilla":  ("🧾 Planilla",  "#9b8fd9"),
         }.get(estado, (estado, "#aaaaaa"))
 
         def celda(texto, ancho, color="#e0e0e0", bold=False):
