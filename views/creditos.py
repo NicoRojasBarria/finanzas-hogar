@@ -2,7 +2,10 @@ import customtkinter as ctk
 from db.database import get_connection
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
-from services.resumen import resumen_mes, credito_activo, es_planilla
+from services.resumen import (resumen_mes, credito_activo, es_planilla,
+                              pagado_creditos_por_mes)
+from views import tema
+from views import componentes as ui
 
 
 def _sumar_un_mes(fecha_str):
@@ -13,22 +16,33 @@ def _sumar_un_mes(fecha_str):
         return fecha_str
 
 
+def _plural(n, singular, plural):
+    """_plural(1, 'cuota', 'cuotas') -> '1 cuota'; con 2 -> '2 cuotas'."""
+    return f"{n} {singular if n == 1 else plural}"
+
+
 class CreditosView(ctk.CTkFrame):
     def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
+        super().__init__(parent, fg_color=tema.FONDO, corner_radius=0)
         self.pack(fill="both", expand=True)
         self._build()
 
     def _build(self):
-        ctk.CTkLabel(
-            self,
-            text="💳 Créditos",
-            font=ctk.CTkFont(size=22, weight="bold"),
-        ).pack(pady=(10, 5))
+        # Encabezado: se rellena en _actualizar_resumen()
+        self.cabecera = ctk.CTkFrame(self, fg_color="transparent")
+        self.cabecera.pack(fill="x", padx=(34, 30), pady=(24, 0))
 
-        # Tarjetas resumen
-        self.resumen_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.resumen_frame.pack(fill="x", padx=20, pady=(0, 10))
+        # Tarjetas resumen: se crean UNA vez y después solo se actualizan
+        fila_tarjetas = ctk.CTkFrame(self, fg_color="transparent")
+        fila_tarjetas.pack(fill="x", padx=(28, 24), pady=(14, 10))
+        self.tarjetas = {}
+        colores = [("pagado", tema.VERDE), ("falta", tema.AMBAR),
+                   ("proximo", tema.AZUL), ("deuda", tema.ROJO)]
+        for i, (clave, color) in enumerate(colores):
+            fila_tarjetas.grid_columnconfigure(i, weight=1, uniform="tarjetas")
+            tarjeta = ui.TarjetaResumen(fila_tarjetas, "", "", color=color)
+            tarjeta.grid(row=0, column=i, sticky="ew")
+            self.tarjetas[clave] = tarjeta
 
         self.scroll = ctk.CTkScrollableFrame(self, fg_color=("#e8e8e8", "#1a1a1a"))
         self.scroll.pack(fill="both", expand=True, padx=10, pady=5)
@@ -36,8 +50,6 @@ class CreditosView(ctk.CTkFrame):
         self._cargar_creditos()
 
     def _cargar_creditos(self):
-        for w in self.resumen_frame.winfo_children():
-            w.destroy()
         for w in self.scroll.winfo_children():
             w.destroy()
 
@@ -47,29 +59,7 @@ class CreditosView(ctk.CTkFrame):
         ).fetchall()
         conn.close()
 
-        # ── TARJETAS RESUMEN ────────────────────────────────────────────
-        r = resumen_mes()
-        falta = r["falta_creditos"]
-        tarjetas = [
-            (f"✅ Pagado en {r['mes']}", f"${r['pagado_creditos']:,}", "#2ecc71",
-             f"{r['n_pagos_creditos']} pago(s) registrados"),
-            (f"⏳ Falta pagar en {r['mes']}", f"${falta:,}",
-             "#e67e22" if falta else "#2ecc71",
-             f"{r['n_falta_creditos']} cuota(s) pendientes" if falta else "Nada pendiente 🎉"),
-            (f"📅 Viene en {r['mes_prox']}", f"${r['proximo_creditos']:,}", "#3498db",
-             f"{r['n_proximo_creditos']} cuota(s)"),
-            ("📉 Deuda restante", f"${r['deuda']:,}", "#e74c3c",
-             f"{r['judiciales']} judicial · {r['atrasados']} atrasados"),
-        ]
-        for titulo, valor, color, sub in tarjetas:
-            card = ctk.CTkFrame(self.resumen_frame, fg_color="#1e1e2e", corner_radius=10)
-            card.pack(side="left", expand=True, fill="x", padx=8, pady=5)
-            ctk.CTkLabel(card, text=titulo, font=ctk.CTkFont(size=11),
-                         text_color="#aaaaaa").pack(pady=(12, 2))
-            ctk.CTkLabel(card, text=valor, font=ctk.CTkFont(size=20, weight="bold"),
-                         text_color=color).pack()
-            ctk.CTkLabel(card, text=sub, font=ctk.CTkFont(size=11),
-                         text_color="#777799").pack(pady=(2, 12))
+        self._actualizar_resumen(creditos)
 
         if not creditos:
             ctk.CTkLabel(self.scroll, text="Sin créditos registrados",
@@ -91,6 +81,50 @@ class CreditosView(ctk.CTkFrame):
 
         for cr in creditos:
             self._fila(cr)
+
+    # ── Encabezado y tarjetas ───────────────────────────────────────────
+    def _actualizar_resumen(self, creditos):
+        r = resumen_mes()
+        hoy = date.today()
+        activos = sum(1 for cr in creditos if credito_activo(cr))
+
+        for w in self.cabecera.winfo_children():
+            w.destroy()
+        subtitulo = f"{r['mes'].capitalize()} {hoy.year}, " + _plural(
+            activos, "crédito activo", "créditos activos")
+        ui.titulo_seccion(self.cabecera, "Créditos", subtitulo).pack(side="left")
+
+        self._poner_tarjeta(
+            "pagado", f"Pagado en {r['mes']}", r["pagado_creditos"],
+            _plural(r["n_pagos_creditos"], "pago registrado", "pagos registrados"),
+            serie=pagado_creditos_por_mes())
+
+        falta = r["falta_creditos"]
+        self._poner_tarjeta(
+            "falta", "Falta pagar", falta,
+            _plural(r["n_falta_creditos"], "cuota pendiente", "cuotas pendientes")
+            if falta else "Nada pendiente",
+            color=tema.AMBAR if falta else tema.VERDE)
+
+        self._poner_tarjeta(
+            "proximo", f"Vence en {r['mes_prox']}", r["proximo_creditos"],
+            _plural(r["n_proximo_creditos"], "cuota", "cuotas"))
+
+        problemas = []
+        if r["judiciales"]:
+            problemas.append(f"{r['judiciales']} en judicial")
+        if r["atrasados"]:
+            problemas.append(_plural(r["atrasados"], "atrasado", "atrasados"))
+        self._poner_tarjeta(
+            "deuda", "Deuda restante", r["deuda"],
+            ", ".join(problemas) if problemas else "Todo al día")
+
+    def _poner_tarjeta(self, clave, titulo, monto, detalle, color=None, serie=None):
+        tarjeta = self.tarjetas[clave]
+        tarjeta.titulo = titulo
+        if color:
+            tarjeta.color = color
+        tarjeta.actualizar(valor=tema.pesos(monto), detalle=detalle, serie=serie)
 
     def _ultimo_pago(self, credito_id):
         conn = get_connection()

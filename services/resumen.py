@@ -194,3 +194,28 @@ def resumen_mes(ref=None):
         "atrasados": atrasados,
         "pendientes": pendientes,
     }
+
+
+def pagado_creditos_por_mes(meses=6, ref=None):
+    """Total pagado en créditos (sin planilla) en los últimos `meses` meses.
+
+    Devuelve una lista del mes más antiguo al actual, con 0 en los meses
+    sin pagos. Se usa para el mini gráfico de la tarjeta "Pagado".
+    """
+    ref = ref or date.today()
+    ini = ref.replace(day=1)
+    claves = [(ini - relativedelta(months=i)).strftime("%Y-%m")
+              for i in range(meses - 1, -1, -1)]
+
+    conn = get_connection()
+    filas = conn.execute(
+        "SELECT strftime('%Y-%m', pc.fecha) AS mes, SUM(pc.monto_real) AS total "
+        "FROM pagos_creditos pc JOIN creditos c ON c.id = pc.credito_id "
+        "WHERE COALESCE(c.por_planilla, 0) = 0 AND strftime('%Y-%m', pc.fecha) >= ? "
+        "GROUP BY mes",
+        (claves[0],)
+    ).fetchall()
+    conn.close()
+
+    por_mes = {f["mes"]: f["total"] for f in filas}
+    return [por_mes.get(m, 0) for m in claves]
