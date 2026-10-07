@@ -2,6 +2,7 @@ import customtkinter as ctk
 from db.database import get_connection
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
+from services.resumen import resumen_mes
 
 
 class IngresosView(ctk.CTkFrame):
@@ -103,9 +104,10 @@ class IngresosView(ctk.CTkFrame):
         extra_mes   = conn.execute("SELECT COALESCE(SUM(monto),0) as t FROM ingresos WHERE mes=? AND tipo='Extra'", (mes,)).fetchone()["t"]
         total_anio  = conn.execute("SELECT COALESCE(SUM(monto),0) as t FROM ingresos WHERE mes LIKE ?", (f"{mes[:4]}%",)).fetchone()["t"]
 
-        gastos_fijos = conn.execute("SELECT COALESCE(SUM(monto_estimado),0) as t FROM cuentas_fijas").fetchone()["t"]
-        gastos_cred  = conn.execute("SELECT COALESCE(SUM(cuota),0) as t FROM creditos").fetchone()["t"]
-        total_gastos = gastos_fijos + gastos_cred + 307000
+        # Mismo cálculo que el Dashboard: lo pagado del mes + lo que falta pagar
+        r = resumen_mes(date(int(mes[:4]), int(mes[5:]), 1))
+        es_mes_actual = mes == date.today().strftime("%Y-%m")
+        total_gastos = r["pagado"] + (r["falta"] if es_mes_actual else 0)
 
         # Meses con datos reales + 2 meses futuros proyectados
         hoy = date.today()
